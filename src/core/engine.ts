@@ -1,3 +1,5 @@
+import { classify } from "./classifier.js"
+
 export interface ModelIdentity {
   providerID: string
   id: string
@@ -30,12 +32,7 @@ export interface ContextShuntEngine {
 export function createDefaultEngine(): ContextShuntEngine {
   return {
     async decide(request) {
-      // MVP placeholder: pass-through. Classifier/policy land in Phase 1.
-      return {
-        action: "pass",
-        tier: "T3",
-        reason: `scaffold pass-through for ${request.tool}/${request.operation}`,
-      }
+      return classify(request)
     },
   }
 }
