@@ -1,0 +1,38 @@
+# OpenCode Context Shunt — example policy
+version: 1
+mode: enforce # dry-run | enforce
+
+thresholds:
+  directReadTokens: 800
+  largeReadTokens: 4000
+  shellOutputTokens: 1500
+  maxReturnTokens: 1200
+
+tiers:
+  T0:
+    enabled: true
+  T1:
+    enabled: true
+    model:
+      providerID: local
+      id: slm-default
+  T2:
+    enabled: true
+    model:
+      providerID: openai
+      id: gpt-4.1-mini
+  T3:
+    enabled: true
+    # primary / frontier — usually the OpenCode session model
+
+cache:
+  backend: filesystem
+  path: .ocs/cache
+
+telemetry:
+  enabled: true
+  prometheus: false
+
+security:
+  redactSecrets: true
+  blockUnapprovedExternalModels: false

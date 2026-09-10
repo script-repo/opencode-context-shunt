@@ -1,0 +1,27 @@
+{
+  "name": "opencode-context-shunt",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OpenCode Context Shunt (OCS) — deterministic context, cost, and model-routing layer",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./opencode": "./dist/adapters/opencode/plugin.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.8"
+  }
+}
