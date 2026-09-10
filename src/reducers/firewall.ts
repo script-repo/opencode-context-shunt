@@ -1,4 +1,4 @@
-import { applyBudget } from "../core/governor.js"
+import { applyBudget, resolveToolBudget } from "../core/governor.js"
 import { estimateTokens } from "../core/tokenizer.js"
 import type { Reducer, ReducerResult } from "./base.js"
 import { boundedReduce, genericReducer } from "./generic.js"
@@ -82,7 +82,7 @@ export async function applyOutputFirewall(args: {
   const text = coerceOutputText(args.output)
   const tokensIn = estimateTokens(text)
   const maxRaw = args.maxRawTokens ?? DEFAULT_MAX_RAW_TOKENS
-  const returnBudget = args.maxReturnTokens ?? DEFAULT_RETURN_TOKENS
+  const returnBudget = args.maxReturnTokens ?? resolveToolBudget(args.tool)
 
   if (tokensIn <= maxRaw) {
     const budgeted = applyBudget(text, returnBudget)
