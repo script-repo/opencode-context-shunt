@@ -11,5 +11,6 @@ describe("createDefaultEngine", () => {
       input: { path: "README.md" },
     })
     expect(decision.action).toBe("pass")
+    expect(decision.reducer).toBe("smart-read")
   })
 })

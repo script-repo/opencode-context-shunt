@@ -1,4 +1,4 @@
-# OpenCode Context Shunt — example policy
+# OpenCode Context Shunt - example policy
 version: 1
 mode: enforce # dry-run | enforce
 
@@ -7,6 +7,15 @@ thresholds:
   largeReadTokens: 4000
   shellOutputTokens: 1500
   maxReturnTokens: 1200
+
+# Smart Read thresholds (SPEC section 10.2) - also accepted under tools.read
+read:
+  direct_max_lines: 250
+  direct_max_tokens: 4000
+  semantic_map_min_lines: 251
+  huge_file_min_tokens: 20000
+  targeted_range_max_tokens: 6000
+  maximum_summary_tokens: 1500
 
 tiers:
   T0:
@@ -23,7 +32,19 @@ tiers:
       id: gpt-4.1-mini
   T3:
     enabled: true
-    # primary / frontier — usually the OpenCode session model
+    # primary / frontier - usually the OpenCode session model
+
+tools:
+  read:
+    enabled: true
+    override_builtin: true
+    direct_max_lines: 250
+    direct_max_tokens: 4000
+    semantic_map_min_lines: 251
+    huge_file_min_tokens: 20000
+    targeted_max_tokens: 6000
+    maximum_return_tokens: 1500
+    worker_tier: T0
 
 cache:
   backend: filesystem
