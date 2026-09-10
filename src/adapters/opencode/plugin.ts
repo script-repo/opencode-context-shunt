@@ -1,3 +1,4 @@
+import { isAbsolute, resolve } from "node:path"
 import { createDefaultEngine } from "../../core/engine.js"
 import { smartRead, type SmartReadOptions } from "../../tools/smart-read.js"
 import { registerHooks } from "./hooks.js"
@@ -31,8 +32,13 @@ function parseReadArgs(args: Record<string, unknown>): {
   return { path, options }
 }
 
+function resolveReadPath(filePath: string, baseDir?: string): string {
+  if (!baseDir || isAbsolute(filePath)) return filePath
+  return resolve(baseDir, filePath)
+}
+
 /** Custom `read` tool that takes precedence over the built-in (SPEC section 7.3 / section 10). */
-export function createSmartReadTool(): OpenCodeToolDefinition {
+export function createSmartReadTool(baseDir?: string): OpenCodeToolDefinition {
   return {
     name: "read",
     description:
@@ -51,7 +57,7 @@ export function createSmartReadTool(): OpenCodeToolDefinition {
     },
     async execute(args: Record<string, unknown>) {
       const { path, options } = parseReadArgs(args)
-      return smartRead(path, options)
+      return smartRead(resolveReadPath(path, baseDir), options)
     },
   }
 }
@@ -62,14 +68,16 @@ export function createSmartReadTool(): OpenCodeToolDefinition {
  */
 export function createOpenCodePlugin() {
   const engine = createDefaultEngine()
-  const readTool = createSmartReadTool()
 
   return {
     id: "opencode-context-shunt",
     /** Expose for tests / hosts that register tools manually */
-    tools: [readTool],
+    get tools() {
+      return [createSmartReadTool()]
+    },
     engine,
     async register(ctx: OpenCodePluginContext) {
+      const readTool = createSmartReadTool(ctx.directory)
       const toolApi = ctx.tool
       if (toolApi?.register) toolApi.register(readTool)
       else if (toolApi?.add) toolApi.add(readTool)

@@ -134,11 +134,14 @@ function resolveRange(
   if (opts.offset != null || opts.limit != null) {
     const offset = Math.max(0, opts.offset ?? 0)
     const startLine = offset + 1
+    // Past EOF: preserve requested offset and return an empty slice (not last line).
+    if (totalLines === 0 || startLine > totalLines) {
+      return { startLine, endLine: startLine - 1 }
+    }
     const endLine =
       opts.limit != null
         ? Math.min(totalLines, offset + opts.limit)
         : totalLines
-    if (startLine > totalLines) return { startLine: totalLines, endLine: totalLines }
     return { startLine, endLine: Math.max(startLine, endLine) }
   }
   return undefined
@@ -447,9 +450,37 @@ function buildSemanticMap(
     mode: indexOnly ? "index_extract" : "full_map",
   }
   if (findings.length) map.material_findings = findings
-  // Soft-cap summary size awareness (metadata only - map itself is structured)
-  void thresholds.maximum_summary_tokens
-  return map
+  return enforceSummaryBudget(map, thresholds.maximum_summary_tokens)
+}
+
+/** Trim optional map fields until JSON estimateTokens <= budget. */
+function enforceSummaryBudget(map: SemanticFileMap, budget: number): SemanticFileMap {
+  const measure = (m: SemanticFileMap) => estimateTokens(JSON.stringify(m))
+  if (measure(map) <= budget) return map
+
+  const next: SemanticFileMap = { ...map }
+  // Drop optional / bulky fields first
+  if (next.material_findings) {
+    delete next.material_findings
+    if (measure(next) <= budget) return next
+  }
+  while (next.dependencies.length > 0 && measure(next) > budget) {
+    next.dependencies = next.dependencies.slice(0, -1)
+  }
+  if (measure(next) <= budget) return next
+  while (next.symbols.length > 0 && measure(next) > budget) {
+    next.symbols = next.symbols.slice(0, -1)
+  }
+  if (measure(next) <= budget) return next
+  while (next.recommended_ranges.length > 1 && measure(next) > budget) {
+    next.recommended_ranges = next.recommended_ranges.slice(0, -1)
+  }
+  if (measure(next) <= budget) return next
+  // Last resort: shorten purpose
+  while (next.purpose.length > 24 && measure(next) > budget) {
+    next.purpose = next.purpose.slice(0, Math.max(24, Math.floor(next.purpose.length * 0.7))) + "…"
+  }
+  return next
 }
 
 /**
@@ -471,10 +502,22 @@ export async function smartRead(
   const normalizedLines = content === "" ? [] : lines
   const fp = fingerprint([path, content])
   const fullTokens = estimateTokens(content)
-  const range = resolveRange(options, Math.max(lineCount, 1))
+  const range = resolveRange(options, lineCount)
 
   // Targeted range path
-  if (range && lineCount > 0) {
+  if (range) {
+    // Empty / past-EOF range: do not invent content
+    if (range.endLine < range.startLine || lineCount === 0) {
+      return {
+        type: "content",
+        path,
+        fingerprint: `sha256:${fp}`,
+        lines: 0,
+        estimated_tokens: 0,
+        range: formatRange(range.startLine, Math.max(range.endLine, range.startLine - 1)),
+        content: "",
+      }
+    }
     const ranged = sliceLines(normalizedLines, range)
     const rangedTokens = estimateTokens(ranged)
     const rangeLineCount = range.endLine - range.startLine + 1

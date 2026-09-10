@@ -228,3 +228,33 @@ describe("fingerprint stability", () => {
     expect(createHash("sha256").update("x").digest("hex")).toHaveLength(64)
   })
 })
+
+describe("P2: offset beyond EOF", () => {
+  it("returns empty content instead of the last line", async () => {
+    const result = await smartRead("tiny.ts", {
+      content: "a\nb\nc\n",
+      offset: 100,
+      limit: 10,
+    })
+    expect(result.type).toBe("content")
+    if (result.type === "content") {
+      expect(result.content).toBe("")
+      expect(result.lines).toBe(0)
+    }
+  })
+})
+
+describe("P2: summary token budget", () => {
+  it("trims semantic map when maximum_summary_tokens is tiny", async () => {
+    const lines = Array.from({ length: 300 }, (_, i) => `export function f${i}() { return ${i} }`).join("\n")
+    const result = await smartRead("big.ts", {
+      content: lines,
+      thresholds: { maximum_summary_tokens: 80, direct_max_lines: 10, direct_max_tokens: 50 },
+    })
+    expect(result.type).toBe("semantic_file_map")
+    if (result.type === "semantic_file_map") {
+      const { estimateTokens } = await import("../../src/core/tokenizer.js")
+      expect(estimateTokens(JSON.stringify(result))).toBeLessThanOrEqual(80)
+    }
+  })
+})
