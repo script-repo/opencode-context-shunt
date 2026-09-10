@@ -28,10 +28,25 @@ function readInputMeta(input: unknown): {
   return { path, hasRange, estimatedTokens }
 }
 
+function toolOutputTokens(input: unknown): number | undefined {
+  if (!input || typeof input !== "object") {
+    return typeof input === "string" ? estimateTokens(input) : undefined
+  }
+  const o = input as Record<string, unknown>
+  if (typeof o.estimated_tokens === "number") return o.estimated_tokens
+  if (typeof o.output === "string") return estimateTokens(o.output)
+  if (typeof o.stdout === "string") {
+    const err = typeof o.stderr === "string" ? o.stderr : ""
+    return estimateTokens(err ? `${o.stdout}\n${err}` : o.stdout)
+  }
+  if (typeof o.content === "string") return estimateTokens(o.content)
+  return undefined
+}
+
 /**
  * Rule-based workload classifier (SPEC section 9).
  * Read operations are routed onto the Smart Read path (SPEC section 10).
- * Final small-vs-map decision is made inside smartRead; classifier only routes.
+ * Shell/grep/test outputs are marked for Phase 3 firewall reducers.
  */
 export function classify(request: ShuntRequest): ShuntDecision {
   const tool = request.tool.toLowerCase()
@@ -74,6 +89,53 @@ export function classify(request: ShuntRequest): ShuntDecision {
       reason: "read -> Smart Read path",
       estimatedRawTokens: meta.estimatedTokens,
       maximumReturnTokens: thresholds.direct_max_tokens,
+    }
+  }
+
+  if (/(bash|shell|sh|zsh)/i.test(tool)) {
+    const tokens = toolOutputTokens(request.input)
+    return {
+      action: "compress",
+      tier: "T0",
+      reducer: "shell",
+      reason: "shell/bash output -> shell reducer firewall",
+      estimatedRawTokens: tokens,
+      maximumReturnTokens: 3000,
+    }
+  }
+
+  if (/(test|vitest|jest|mocha|pytest)/i.test(tool)) {
+    const tokens = toolOutputTokens(request.input)
+    return {
+      action: "compress",
+      tier: "T0",
+      reducer: "tests",
+      reason: "test runner output -> tests reducer firewall",
+      estimatedRawTokens: tokens,
+      maximumReturnTokens: 3000,
+    }
+  }
+
+  if (/(grep|rg|ripgrep)/i.test(tool)) {
+    const tokens = toolOutputTokens(request.input)
+    return {
+      action: "compress",
+      tier: "T0",
+      reducer: "grep",
+      reason: "grep/rg output -> grep reducer firewall",
+      estimatedRawTokens: tokens,
+      maximumReturnTokens: 3000,
+    }
+  }
+
+  if (tool === "git" || tool.startsWith("git-") || tool.startsWith("git ")) {
+    return {
+      action: "compress",
+      tier: "T0",
+      reducer: "git",
+      reason: "git output -> git reducer",
+      estimatedRawTokens: toolOutputTokens(request.input),
+      maximumReturnTokens: 3000,
     }
   }
 

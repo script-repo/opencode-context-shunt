@@ -1,4 +1,5 @@
-import { isAbsolute, resolve } from "node:path"
+import { isAbsolute, join, resolve } from "node:path"
+import { createFilesystemCache } from "../../cache/filesystem.js"
 import { createDefaultEngine } from "../../core/engine.js"
 import { smartRead, type SmartReadOptions } from "../../tools/smart-read.js"
 import { registerHooks } from "./hooks.js"
@@ -38,7 +39,14 @@ function resolveReadPath(filePath: string, baseDir?: string): string {
 }
 
 /** Custom `read` tool that takes precedence over the built-in (SPEC section 7.3 / section 10). */
-export function createSmartReadTool(baseDir?: string): OpenCodeToolDefinition {
+export function createSmartReadTool(
+  baseDir?: string,
+  cacheRoot?: string,
+): OpenCodeToolDefinition {
+  const cache = createFilesystemCache(
+    cacheRoot ??
+      (baseDir ? join(baseDir, ".ocs", "cache") : join(process.cwd(), ".ocs", "cache")),
+  )
   return {
     name: "read",
     description:
@@ -57,7 +65,7 @@ export function createSmartReadTool(baseDir?: string): OpenCodeToolDefinition {
     },
     async execute(args: Record<string, unknown>) {
       const { path, options } = parseReadArgs(args)
-      return smartRead(resolveReadPath(path, baseDir), options)
+      return smartRead(resolveReadPath(path, baseDir), { ...options, cache })
     },
   }
 }
@@ -77,7 +85,10 @@ export function createOpenCodePlugin() {
     },
     engine,
     async register(ctx: OpenCodePluginContext) {
-      const readTool = createSmartReadTool(ctx.directory)
+      const readTool = createSmartReadTool(
+        ctx.directory,
+        ctx.directory ? join(ctx.directory, ".ocs", "cache") : undefined,
+      )
       const toolApi = ctx.tool
       if (toolApi?.register) toolApi.register(readTool)
       else if (toolApi?.add) toolApi.add(readTool)

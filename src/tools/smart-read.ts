@@ -4,6 +4,8 @@
  */
 import { basename, extname } from "node:path"
 import { fingerprint } from "../cache/fingerprint.js"
+import type { CacheStore } from "../cache/base.js"
+import { smartReadCacheKey } from "../cache/filesystem.js"
 import { estimateTokens } from "../core/tokenizer.js"
 import {
   DEFAULT_READ_THRESHOLDS,
@@ -27,6 +29,10 @@ export type SmartReadOptions = {
   thresholds?: Partial<ReadThresholds>
   /** Pre-loaded content (tests / adapters); skips filesystem when set */
   content?: string
+  /** Optional cache store for semantic_file_map hit/miss (SPEC §17) */
+  cache?: CacheStore
+  /** Schema/reducer version for cache keying */
+  cacheSchemaVersion?: string
 }
 
 export type SymbolKind =
@@ -66,6 +72,8 @@ export type SemanticFileMap = {
   recommended_ranges: string[]
   /** Present for huge/generated index-only maps */
   mode?: "full_map" | "index_extract"
+  /** True when served from filesystem cache */
+  cache_hit?: boolean
 }
 
 export type SmartReadContentResult = {
@@ -483,6 +491,51 @@ function enforceSummaryBudget(map: SemanticFileMap, budget: number): SemanticFil
   return next
 }
 
+
+async function loadOrBuildSemanticMap(
+  path: string,
+  content: string,
+  lines: string[],
+  fp: string,
+  tokens: number,
+  thresholds: ReadThresholds,
+  indexOnly: boolean,
+  cache?: CacheStore,
+  schemaVersion?: string,
+): Promise<SemanticFileMap> {
+  const key = smartReadCacheKey({
+    path,
+    contentFingerprint: fp,
+    reducerId: "smart-read",
+    schemaVersion: schemaVersion ?? "1",
+  })
+  if (cache) {
+    const hit = await cache.get(key)
+    if (hit) {
+      try {
+        const parsed = JSON.parse(hit) as SemanticFileMap
+        if (parsed && parsed.type === "semantic_file_map") {
+          return { ...parsed, cache_hit: true }
+        }
+      } catch {
+        // SPEC §27: discard corrupt cache entry
+      }
+    }
+  }
+  const map = buildSemanticMap(path, content, lines, fp, tokens, thresholds, indexOnly)
+  if (cache) {
+    try {
+      // Persist without ephemeral cache_hit flag
+      const { cache_hit: _omit, ...toStore } = map as SemanticFileMap & { cache_hit?: boolean }
+      void _omit
+      await cache.set(key, JSON.stringify(toStore))
+    } catch {
+      // cache write failures must not break reads
+    }
+  }
+  return map
+}
+
 /**
  * Smart Read entry point.
  * - small file OR targeted small range -> full/ranged text content
@@ -549,7 +602,7 @@ export async function smartRead(
       }
     }
     // Range itself is huge - map the file instead (caller should narrow)
-    return buildSemanticMap(
+    return loadOrBuildSemanticMap(
       path,
       content,
       normalizedLines,
@@ -557,6 +610,8 @@ export async function smartRead(
       fullTokens,
       thresholds,
       isHugeOrGenerated(path, fullTokens, thresholds),
+      options?.cache,
+      options?.cacheSchemaVersion,
     )
   }
 
@@ -578,7 +633,17 @@ export async function smartRead(
   const huge = isHugeOrGenerated(path, fullTokens, thresholds)
   // semantic_map_min_lines gate: at/above -> map (already not small)
   void thresholds.semantic_map_min_lines
-  return buildSemanticMap(path, content, normalizedLines, fp, fullTokens, thresholds, huge)
+  return loadOrBuildSemanticMap(
+    path,
+    content,
+    normalizedLines,
+    fp,
+    fullTokens,
+    thresholds,
+    huge,
+    options?.cache,
+    options?.cacheSchemaVersion,
+  )
 }
 
 export { DEFAULT_READ_THRESHOLDS }

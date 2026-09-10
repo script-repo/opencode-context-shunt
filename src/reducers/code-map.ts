@@ -1,8 +1,13 @@
 import type { Reducer } from "./base.js"
+import { boundedReduce } from "./generic.js"
 
 export const codeMapReducer: Reducer = {
   name: "code-map",
-  async reduce() {
-    throw new Error("code-map reducer: not implemented")
+  async reduce(input) {
+    const result = boundedReduce(input, 3200)
+    return {
+      ...result,
+      metadata: { ...(result.metadata ?? {}), reducer: "code-map", thin: true },
+    }
   },
 }
